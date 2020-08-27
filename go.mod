@@ -1,4 +1,4 @@
-module github.com/gin-contrib/size
+module github.com/abhinavk1/requestlimit
 
 require (
 	github.com/gin-gonic/gin v1.6.3
@@ -6,4 +6,4 @@ require (
 	gopkg.in/check.v1 v1.0.0-20180628173108-788fd7840127 // indirect
 )
 
-go 1.13
+go 1.14

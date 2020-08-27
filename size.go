@@ -8,12 +8,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type OnLimitReachedFunc func(ctx *gin.Context, err error)
+
 type maxBytesReader struct {
-	ctx        *gin.Context
-	rdr        io.ReadCloser
-	remaining  int64
-	wasAborted bool
-	sawEOF     bool
+	ctx            *gin.Context
+	rdr            io.ReadCloser
+	remaining      int64
+	wasAborted     bool
+	sawEOF         bool
+	onLimitReached OnLimitReachedFunc
 }
 
 func (mbr *maxBytesReader) tooLarge() (n int, err error) {
@@ -22,11 +25,9 @@ func (mbr *maxBytesReader) tooLarge() (n int, err error) {
 	if !mbr.wasAborted {
 		mbr.wasAborted = true
 		ctx := mbr.ctx
-		ctx.Error(err)
-		ctx.Header("connection", "close")
-		ctx.String(http.StatusRequestEntityTooLarge, "request too large")
-		ctx.AbortWithStatus(http.StatusRequestEntityTooLarge)
+		mbr.onLimitReached(ctx, err)
 	}
+
 	return
 }
 
@@ -70,21 +71,39 @@ func (mbr *maxBytesReader) Close() error {
 	return mbr.rdr.Close()
 }
 
-// RequestSizeLimiter returns a middleware that limits the size of request
+// Handler returns a middleware that limits the size of request
 // When a request is over the limit, the following will happen:
 // * Error will be added to the context
 // * Connection: close header will be set
 // * Error 413 will be sent to the client (http.StatusRequestEntityTooLarge)
 // * Current context will be aborted
-func RequestSizeLimiter(limit int64) gin.HandlerFunc {
+func Handler(limit int64, onLimitReachedFunc OnLimitReachedFunc) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
-		ctx.Request.Body = &maxBytesReader{
+
+		reader := &maxBytesReader{
 			ctx:        ctx,
 			rdr:        ctx.Request.Body,
 			remaining:  limit,
 			wasAborted: false,
 			sawEOF:     false,
 		}
+
+		if onLimitReachedFunc != nil {
+			// If a hook if provided
+			reader.onLimitReached = onLimitReachedFunc
+		} else {
+			// else just use the default one
+			reader.onLimitReached = defaultOnLimitReached
+		}
+
+		ctx.Request.Body = reader
 		ctx.Next()
 	}
+}
+
+func defaultOnLimitReached(ctx *gin.Context, err error) {
+	ctx.Error(err)
+	ctx.Header("connection", "close")
+	ctx.String(http.StatusRequestEntityTooLarge, "request too large")
+	ctx.Abort()
 }

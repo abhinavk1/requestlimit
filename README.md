@@ -1,10 +1,4 @@
-# size
-
-[![Build Status](https://travis-ci.org/gin-contrib/size.svg)](https://travis-ci.org/gin-contrib/size)
-[![codecov](https://codecov.io/gh/gin-contrib/size/branch/master/graph/badge.svg)](https://codecov.io/gh/gin-contrib/size)
-[![Go Report Card](https://goreportcard.com/badge/github.com/gin-contrib/size)](https://goreportcard.com/report/github.com/gin-contrib/size)
-[![GoDoc](https://godoc.org/github.com/gin-contrib/size?status.svg)](https://godoc.org/github.com/gin-contrib/size)
-[![Join the chat at https://gitter.im/gin-gonic/gin](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/gin-gonic/gin)
+# Gin Request Size Limit Middleware
 
 Limit size of POST requests for Gin framework
 
@@ -15,9 +9,9 @@ Limit size of POST requests for Gin framework
 package main
 
 import (
-	"net/http"
-	"github.com/gin-contrib/size"
+	"github.com/abhinavk1/requestlimit"
 	"github.com/gin-gonic/gin"
+	"net/http"
 )
 
 func handler(ctx *gin.Context) {
@@ -29,9 +23,23 @@ func handler(ctx *gin.Context) {
 }
 
 func main() {
+	// Default configuration
 	rtr := gin.Default()
-	rtr.Use(limits.RequestSizeLimiter(10))
+	rtr.Use(requestlimit.Handler(10, nil))
 	rtr.POST("/", handler)
 	rtr.Run(":8080")
+
+	// With custom limit reached hook
+	rtr2 := gin.Default()
+	rtr2.Use(requestlimit.Handler(10, func(ctx *gin.Context, err error) {
+		ctx.Error(err)
+		ctx.Header("connection", "close")
+		ctx.String(http.StatusRequestEntityTooLarge, "request size was out of bounds")
+		ctx.Abort()
+	}))
+	
+	rtr2.POST("/", handler)
+	rtr2.Run(":8081")
 }
+
 ```

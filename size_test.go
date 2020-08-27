@@ -2,6 +2,7 @@ package limits
 
 import (
 	"bytes"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -12,7 +13,7 @@ import (
 
 func TestRequestSizeLimiterOK(t *testing.T) {
 	router := gin.New()
-	router.Use(RequestSizeLimiter(10))
+	router.Use(Handler(10, nil))
 	router.POST("/test_ok", func(c *gin.Context) {
 		ioutil.ReadAll(c.Request.Body)
 		if len(c.Errors) > 0 {
@@ -30,20 +31,37 @@ func TestRequestSizeLimiterOK(t *testing.T) {
 
 func TestRequestSizeLimiterOver(t *testing.T) {
 	router := gin.New()
-	router.Use(RequestSizeLimiter(10))
-	router.POST("/test_large", func(c *gin.Context) {
-		ioutil.ReadAll(c.Request.Body)
-		if len(c.Errors) > 0 {
-			return
-		}
-		c.Request.Body.Close()
-		c.String(http.StatusOK, "OK")
-	})
+	router.Use(Handler(10, nil))
+	router.POST("/test_large", testLimitOver)
 	resp := performRequest(http.MethodPost, "/test_large", "big=abcdefghijklmnop", router)
 
 	if resp.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("error posting - http status %v", resp.Code)
 	}
+
+	fmt.Println(resp.Body.String())
+
+	t.Run("custom onLimitReached function", func(t *testing.T) {
+
+		router = gin.New()
+		router.Use(Handler(10, func(ctx *gin.Context, err error) {
+			ctx.Error(err)
+			ctx.Header("connection", "close")
+			ctx.String(http.StatusBadRequest, "uploaded file was too large to process")
+			ctx.Abort()
+		}))
+		router.POST("/test_large", testLimitOver)
+
+		resp = performRequest(http.MethodPost, "/test_large", "big=abcdefghijklmnop", router)
+
+		if resp.Code != http.StatusBadRequest {
+			t.Fatalf("error posting - http status %v", resp.Code)
+		}
+
+		if resp.Body.String() != "uploaded file was too large to process" {
+			t.Fatalf("error posting - http message %v", resp.Body.String())
+		}
+	})
 }
 
 func performRequest(method, target, body string, router *gin.Engine) *httptest.ResponseRecorder {
@@ -56,4 +74,13 @@ func performRequest(method, target, body string, router *gin.Engine) *httptest.R
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, r)
 	return w
+}
+
+func testLimitOver(c *gin.Context) {
+	ioutil.ReadAll(c.Request.Body)
+	if len(c.Errors) > 0 {
+		return
+	}
+	c.Request.Body.Close()
+	c.String(http.StatusOK, "OK")
 }
