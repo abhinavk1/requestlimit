@@ -77,13 +77,13 @@ func (mbr *maxBytesReader) Close() error {
 // * Connection: close header will be set
 // * Error 413 will be sent to the client (http.StatusRequestEntityTooLarge)
 // * Current context will be aborted
-func Handler(limit int64, onLimitReachedFunc OnLimitReachedFunc) gin.HandlerFunc {
+func Handler(limitBytes int64, onLimitReachedFunc OnLimitReachedFunc) gin.HandlerFunc {
 	return func(ctx *gin.Context) {
 
 		reader := &maxBytesReader{
 			ctx:        ctx,
 			rdr:        ctx.Request.Body,
-			remaining:  limit,
+			remaining:  limitBytes,
 			wasAborted: false,
 			sawEOF:     false,
 		}
@@ -93,7 +93,7 @@ func Handler(limit int64, onLimitReachedFunc OnLimitReachedFunc) gin.HandlerFunc
 			reader.onLimitReached = onLimitReachedFunc
 		} else {
 			// else just use the default one
-			reader.onLimitReached = defaultOnLimitReached
+			reader.onLimitReached = DefaultOnLimitReached
 		}
 
 		ctx.Request.Body = reader
@@ -101,7 +101,7 @@ func Handler(limit int64, onLimitReachedFunc OnLimitReachedFunc) gin.HandlerFunc
 	}
 }
 
-func defaultOnLimitReached(ctx *gin.Context, err error) {
+func DefaultOnLimitReached(ctx *gin.Context, err error) {
 	ctx.Error(err)
 	ctx.Header("connection", "close")
 	ctx.String(http.StatusRequestEntityTooLarge, "request too large")
